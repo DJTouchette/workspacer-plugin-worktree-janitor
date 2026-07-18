@@ -1,0 +1,21 @@
+{
+  "id": "djtouchette.worktree-janitor",
+  "name": "Worktree Janitor",
+  "apiVersion": "1",
+  "server": {
+    "command": "node",
+    "args": ["server.js"],
+    "port": 9210,
+    "health": "/health"
+  },
+  "panes": [
+    {
+      "type": "djtouchette.worktree-janitor",
+      "title": "Worktrees",
+      "icon": "🌳",
+      "scope": "global",
+      "path": "/"
+    }
+  ],
+  "capabilities": ["agents.list"]
+}
