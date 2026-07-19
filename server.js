@@ -15,46 +15,18 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
+const { connect } = require('./wks.js');
 
 const DIR = __dirname;
 const manifest = JSON.parse(fs.readFileSync(path.join(DIR, 'plugin.json'), 'utf8'));
 const PORT = Number(process.env.PORT || (manifest.server && manifest.server.port) || 9210);
-const BUS_URL = process.env.WKS_BUS_URL || 'ws://127.0.0.1:7895/bus';
-function readToken() {
-  if (process.env.WKS_BUS_TOKEN) return process.env.WKS_BUS_TOKEN;
-  try { return fs.readFileSync(path.join(DIR, '.bus-token'), 'utf8').trim(); } catch { return ''; }
-}
 
-let ws = null, connected = false, callSeq = 0;
-const pending = new Map();
 function log(msg) { console.log('[' + manifest.id + '] ' + msg); }
 
-function call(method, params) {
-  return new Promise((resolve, reject) => {
-    if (!connected) return reject(new Error('bus not connected'));
-    const id = 'c' + (++callSeq);
-    pending.set(id, { resolve, reject });
-    ws.send(JSON.stringify({ op: 'call', id, method, params: params || {} }));
-    setTimeout(() => { if (pending.has(id)) { pending.delete(id); reject(new Error('timeout')); } }, 8000);
-  });
-}
-
-function connect() {
-  const tok = readToken();
-  ws = new WebSocket(BUS_URL + (tok ? '?token=' + encodeURIComponent(tok) : ''));
-  ws.addEventListener('open', () => { connected = true; log('bus connected'); });
-  ws.addEventListener('message', (ev) => {
-    let f; try { f = JSON.parse(ev.data); } catch { return; }
-    const c = f.id && pending.get(f.id);
-    if (!c) return;
-    pending.delete(f.id);
-    if (f.op === 'result') c.resolve(f.result);
-    else c.reject(new Error(f.error || 'error'));
-  });
-  ws.addEventListener('close', () => { connected = false; setTimeout(connect, 3000); });
-  ws.addEventListener('error', () => {});
-}
-connect();
+// The workspacer plugin SDK (vendored wks.js): connect to the hub bus (scoped
+// token, reconnect loop) and expose call(); this janitor only calls agents.list.
+const wks = connect({ source: manifest.id });
+wks.onStatus((c) => { if (c) log('bus connected'); });
 
 // ── git plumbing ─────────────────────────────────────────────────────────────
 function git(cwd, args) {
@@ -103,7 +75,7 @@ async function scan() {
   // Repos = unique git roots of every known agent cwd (live and stopped —
   // stopped agents' worktrees are exactly the ones needing cleanup).
   let agents = [];
-  try { agents = (await call('agents.list')) || []; } catch (e) { log('agents.list failed: ' + e.message); }
+  try { agents = (await wks.call('agents.list')) || []; } catch (e) { log('agents.list failed: ' + e.message); }
   const roots = new Set();
   for (const a of agents) {
     const cwd = a && (a.cwd || a.liveCwd);
